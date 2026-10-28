@@ -58,22 +58,29 @@ export const useAllocationStore = defineStore('allocationStore', {
         });
       }
 
+      // No fatal error, or only a deterministic one (still closable).
+      const hasNoNonDeterministicError = (status) => status.fatalError == undefined || status.fatalError.deterministic == true;
+
       if(subgraphSettingStore.settings.statusFilter == 'closable'){
         allocations = allocations.filter((i) => {
           const status = deploymentStatusStore.getDeploymentStatuses[i.subgraphDeployment.ipfsHash];
-          if(status != undefined && status.synced == true && (status.fatalError == undefined || status.fatalError.deterministic == true))
+          if(status != undefined && status.synced == true && hasNoNonDeterministicError(status))
             return true
           return false;
         });
       }
 
-      if(subgraphSettingStore.settings.statusFilter == 'closable-synced-current-epoch'){
+      // Convenience filter only: the indexer agent still validates the POI on close.
+      // Reads chains[0] only (single-chain deployments). If EBO block numbers haven't
+      // loaded yet, skip this filter rather than showing an empty table.
+      const epochBlockNumbers = epochStore.getBlockNumbers;
+      if(subgraphSettingStore.settings.statusFilter == 'closable-synced-current-epoch' && epochBlockNumbers && Object.keys(epochBlockNumbers).length > 0){
         allocations = allocations.filter((i) => {
           const status = deploymentStatusStore.getDeploymentStatuses[i.subgraphDeployment.ipfsHash];
           if(status == undefined) return false;
-          if(status.fatalError != undefined && status.fatalError.deterministic != true) return false;
+          if(!hasNoNonDeterministicError(status)) return false;
           const chainAlias = i.subgraphDeployment.manifest?.network;
-          const epochStartBlock = chainAlias ? epochStore.getBlockNumbers[chainAlias] : undefined;
+          const epochStartBlock = chainAlias ? epochBlockNumbers[chainAlias] : undefined;
           const latestBlock = status.chains?.[0]?.latestBlock?.number;
           if(epochStartBlock == undefined || latestBlock == undefined) return false;
           return parseInt(latestBlock) >= parseInt(epochStartBlock);
